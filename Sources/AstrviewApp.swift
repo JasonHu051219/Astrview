@@ -51,6 +51,11 @@ final class AstrviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         main.addItem(app)
         let menu = NSMenu(title: "Astrview")
         app.submenu = menu
+        let about = menu.addItem(withTitle: "关于 Astrview", action: #selector(showAbout), keyEquivalent: "")
+        about.target = self
+        let repository = menu.addItem(withTitle: "在 GitHub 上查看 Astrview", action: #selector(openRepository), keyEquivalent: "")
+        repository.target = self
+        menu.addItem(.separator())
         let show = menu.addItem(withTitle: "打开 Astrview", action: #selector(showInterface), keyEquivalent: "")
         show.target = self
         let select = menu.addItem(withTitle: "选择 AstrBot 项目…", action: #selector(selectProject), keyEquivalent: "o")
@@ -66,6 +71,33 @@ final class AstrviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         edit.submenu = editMenu
         main.addItem(edit)
         NSApp.mainMenu = main
+    }
+
+    private func metadata(_ key: String) -> String {
+        Bundle.main.object(forInfoDictionaryKey: key) as? String ?? ""
+    }
+
+    @objc private func showAbout() {
+        let credits = NSMutableAttributedString(string: [
+            metadata("AstrviewDescription"),
+            "作者：\(metadata("AstrviewAuthor"))　·　许可证：\(metadata("AstrviewLicense"))"
+        ].joined(separator: "\n") + "\n\n")
+        if let url = URL(string: metadata("AstrviewRepositoryURL")), url.scheme == "https" {
+            credits.append(NSAttributedString(string: url.absoluteString, attributes: [.link: url]))
+        }
+        let centered = NSMutableParagraphStyle()
+        centered.alignment = .center
+        credits.addAttribute(.paragraphStyle, value: centered, range: NSRange(location: 0, length: credits.length))
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationVersion: metadata("AstrviewReleaseVersion"),
+            .version: metadata("CFBundleVersion"),
+            .credits: credits
+        ])
+    }
+
+    @objc private func openRepository() {
+        guard let url = URL(string: metadata("AstrviewRepositoryURL")), url.scheme == "https" else { return }
+        NSWorkspace.shared.open(url)
     }
 
     @objc private func selectProject() { chooseProject(startMode: nil) }

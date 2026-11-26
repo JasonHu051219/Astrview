@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Astrview</title>
+  <desc>A blue robot with AstrBot’s two four-pointed sparkles in the upper-right corner.</desc>
+  <defs>
+    <linearGradient id="tile" x2="1" y2="1">
+      <stop stop-color="#172c43"/>
+      <stop offset="1" stop-color="#0b1629"/>
+    </linearGradient>
+    <linearGradient id="robot" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#a5e7ff"/>
+      <stop offset="1" stop-color="#56b5ef"/>
+    </linearGradient>
+    <path id="sparkle" d="M0-90C8-90 13-85 16-77C27-46 47-27 77-16C85-13 90-8 90 0C90 8 85 13 77 16C47 27 27 46 16 77C13 85 8 90 0 90C-8 90-13 85-16 77C-27 46-47 27-77 16C-85 13-90 8-90 0C-90-8-85-13-77-16C-47-27-27-46-16-77C-13-85-8-90 0-90Z"/>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="202" fill="#081222" fill-opacity=".22" transform="translate(0 9)"/>
+  <rect x="64" y="64" width="896" height="896" rx="202" fill="url(#tile)"/>
+  <rect x="67" y="67" width="890" height="890" rx="199" fill="none" stroke="#7697bb" stroke-opacity=".24" stroke-width="6"/>
+  <g stroke="#77cef6" stroke-width="44" stroke-linecap="round" stroke-linejoin="round" fill="#0e1e33">
+    <path d="M464 458v-95q0-32-32-32h-72" fill="none"/>
+    <path d="M238 572h-32q-18 0-18 18v60q0 18 18 18h32m448-96h32q18 0 18 18v60q0 18-18 18h-32"/>
+  </g>
+  <rect x="242" y="460" width="444" height="306" rx="74" fill="#11253c" stroke="url(#robot)" stroke-width="46"/>
+  <g fill="#a5e7ff">
+    <rect x="359" y="566" width="53" height="94" rx="26.5"/>
+    <rect x="516" y="566" width="53" height="94" rx="26.5"/>
+  </g>
+  <use href="#sparkle" x="735" y="334" fill="#58bdf6"/>
+  <use href="#sparkle" transform="translate(834 222) scale(.43)" fill="#8cddff"/>
+</svg>

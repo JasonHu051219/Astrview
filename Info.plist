@@ -7,8 +7,16 @@
     <key>CFBundleIdentifier</key><string>local.astrview.mac</string>
     <key>CFBundleExecutable</key><string>Astrview</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleIconFile</key><string>Astrview.icns</string>
+    <key>CFBundleShortVersionString</key><string>v0.0.1-beta.1</string>
+    <key>CFBundleVersion</key><string>2</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
+    <key>NSHumanReadableCopyright</key><string>Copyright © 2026 JasonHu</string>
+    <key>AstrviewReleaseVersion</key><string>v0.0.1-beta.1</string>
+    <key>AstrviewAuthor</key><string>JasonHu</string>
+    <key>AstrviewRepositoryURL</key><string>https://github.com/JasonHu051219/Astrview</string>
+    <key>AstrviewLicense</key><string>MIT</string>
+    <key>AstrviewDescription</key><string>原生 macOS AstrBot 管理器：一键启动、实时日志与内嵌 WebUI。</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSAppTransportSecurity</key>
