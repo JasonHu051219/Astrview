@@ -1,14 +1,31 @@
 import AppKit
 import WebKit
 
+private final class TerminalResizeHandle: NSView {
+    var onDrag: ((CGFloat) -> Void)?
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor(srgbRed: 0.28, green: 0.33, blue: 0.42, alpha: 1).setFill()
+        NSRect(x: 0, y: 2, width: bounds.width, height: 1).fill()
+    }
+    private var startY: CGFloat = 0
+
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeUpDown) }
+
+    override func mouseDown(with event: NSEvent) { startY = event.locationInWindow.y }
+
+    override func mouseDragged(with event: NSEvent) {
+        onDrag?(event.locationInWindow.y - startY)
+        startY = event.locationInWindow.y
+    }
+}
+
 final class WorkspaceView: NSView {
-    let launchButton = NSButton(title: "运行astrbot", target: nil, action: nil)
-    let stopButton = NSButton(title: "停止", target: nil, action: nil)
+    let restartButton = NSButton(title: "重试", target: nil, action: nil)
     let retryButton = NSButton(title: "重新加载", target: nil, action: nil)
     let status = NSTextField(labelWithString: "正在启动…")
     let webMessage = NSTextField(labelWithString: "正在连接 http://localhost:6185…")
     let web = WKWebView()
-    private let launchScreen = NSView()
     private let webArea = NSView()
     private let webOverlay = NSView()
     private let terminal = NSView()
@@ -16,6 +33,13 @@ final class WorkspaceView: NSView {
     private let terminalTitle = NSTextField(labelWithString: "终端输出  /  astrbot run")
     private let log = NSTextView()
     private let scroll = NSScrollView()
+    private let resizeHandle = TerminalResizeHandle()
+    private let minimizeButton = NSButton()
+    private let maximizeButton = NSButton()
+    private let barHeight: CGFloat = 36
+    private enum TerminalSize { case docked, minimized, maximized }
+    private var terminalSize: TerminalSize = .docked
+    private var preferredHeight: CGFloat?
     private let ink = NSColor(srgbRed: 0.067, green: 0.082, blue: 0.118, alpha: 1)
     private let light = NSColor(srgbRed: 0.84, green: 0.89, blue: 0.96, alpha: 1)
     private var followOutput = true
@@ -25,10 +49,8 @@ final class WorkspaceView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        addSubview(launchScreen)
         addSubview(webArea)
         addSubview(terminal)
-        launchScreen.addSubview(launchButton)
         webArea.addSubview(web)
         webArea.addSubview(webOverlay)
         webOverlay.addSubview(webMessage)
@@ -37,19 +59,18 @@ final class WorkspaceView: NSView {
         terminal.addSubview(scroll)
         bar.addSubview(terminalTitle)
         bar.addSubview(status)
-        bar.addSubview(stopButton)
+        bar.addSubview(restartButton)
+        bar.addSubview(minimizeButton)
+        bar.addSubview(maximizeButton)
+        addSubview(resizeHandle)
+        resizeHandle.isHidden = true
+        resizeHandle.onDrag = { [weak self] delta in self?.resizeTerminal(by: delta) }
+        configure(minimizeButton, symbol: "minus", label: "最小化终端", action: #selector(minimizeTerminal))
+        configure(maximizeButton, symbol: "square", label: "最大化终端", action: #selector(toggleMaximizeTerminal))
 
-        launchButton.isBordered = false
-        launchButton.wantsLayer = true
-        launchButton.layer?.backgroundColor = NSColor(srgbRed: 0.12, green: 0.36, blue: 0.93, alpha: 1).cgColor
-        launchButton.layer?.cornerRadius = 14
-        launchButton.attributedTitle = NSAttributedString(string: "运行astrbot", attributes: [
-            .font: NSFont.systemFont(ofSize: 18, weight: .semibold), .foregroundColor: NSColor.white
-        ])
-        launchButton.keyEquivalent = "\r"
-        launchButton.setAccessibilityLabel("运行astrbot")
-        stopButton.bezelStyle = .rounded
-        stopButton.controlSize = .small
+        restartButton.bezelStyle = .rounded
+        restartButton.controlSize = .small
+        restartButton.isHidden = true
         bar.appearance = NSAppearance(named: .darkAqua)
         bar.wantsLayer = true
         bar.layer?.backgroundColor = NSColor(srgbRed: 0.11, green: 0.14, blue: 0.20, alpha: 1).cgColor
@@ -92,23 +113,96 @@ final class WorkspaceView: NSView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    private func configure(_ button: NSButton, symbol: String, label: String, action: Selector) {
+        button.isBordered = false
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 13, weight: .thin))
+        button.imagePosition = .imageOnly
+        button.contentTintColor = light
+        button.target = self
+        button.action = action
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
+        button.isHidden = true
+    }
+
+    private var dockedHeight: CGFloat {
+        let height = bounds.height
+        return min(max(barHeight, height - 90), max(barHeight, preferredHeight ?? min(224, max(142, height * 0.24))))
+    }
+
+    private var terminalControlsAvailable: Bool { showingWeb && dockProgress >= 1 }
+
+    func showTerminalRetry() {
+        restartButton.isHidden = false
+        needsLayout = true
+    }
+
+    private func updateTerminalLayout() {
+        let label = terminalSize == .docked ? "最大化终端" : "恢复终端高度"
+        maximizeButton.toolTip = label
+        maximizeButton.setAccessibilityLabel(label)
+        minimizeButton.isEnabled = terminalSize != .minimized
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+    }
+
+    @objc private func minimizeTerminal() {
+        guard terminalControlsAvailable else { return }
+        terminalSize = .minimized
+        updateTerminalLayout()
+    }
+
+    @objc private func toggleMaximizeTerminal() {
+        guard terminalControlsAvailable else { return }
+        terminalSize = terminalSize == .docked ? .maximized : .docked
+        updateTerminalLayout()
+    }
+
+    private func resizeTerminal(by delta: CGFloat) {
+        guard terminalControlsAvailable, delta != 0 else { return }
+        let upper = max(barHeight, bounds.height - 90)
+        let origin = min(terminal.frame.height, upper)
+        let next = min(upper, max(barHeight, origin + delta))
+        if next <= barHeight {
+            terminalSize = .minimized
+        } else {
+            preferredHeight = next
+            terminalSize = .docked
+        }
+        updateTerminalLayout()
+    }
+
     override func layout() {
         super.layout()
         let width = bounds.width
         let height = bounds.height
-        launchScreen.frame = bounds
-        launchButton.frame = CGRect(x: (width - 184) / 2, y: (height - 54) / 2, width: 184, height: 54)
         guard showingTerminal else { return }
-        let bottom = min(height, max(142, min(224, height * 0.24)))
-        let consoleHeight = showingWeb ? height + (bottom - height) * dockProgress : height
+        let bottom: CGFloat
+        switch terminalSize {
+        case .docked: bottom = dockedHeight
+        case .minimized: bottom = barHeight
+        case .maximized: bottom = height
+        }
+        let consoleHeight = showingWeb ? height + (min(height, bottom) - height) * dockProgress : height
         terminal.frame = CGRect(x: 0, y: 0, width: width, height: consoleHeight)
-        let barHeight: CGFloat = 36
+        minimizeButton.isHidden = !terminalControlsAvailable
+        maximizeButton.isHidden = !terminalControlsAvailable
+        resizeHandle.isHidden = !terminalControlsAvailable || terminalSize == .maximized
+        if !resizeHandle.isHidden {
+            resizeHandle.frame = CGRect(x: 0, y: max(0, consoleHeight - 3), width: width, height: 7)
+        }
         bar.frame = CGRect(x: 0, y: max(0, consoleHeight - barHeight), width: width, height: barHeight)
         terminalTitle.frame = CGRect(x: 15, y: 10, width: min(230, width * 0.51), height: 16)
         let statusX = terminalTitle.frame.maxX + 6
-        status.frame = CGRect(x: statusX, y: 10, width: max(0, width - statusX - 97), height: 15)
-        stopButton.frame = CGRect(x: width - 90, y: 5, width: 78, height: 26)
+        let controlsWidth: CGFloat = terminalControlsAvailable ? 62 : 12
+        let restartWidth: CGFloat = restartButton.isHidden ? 0 : 78
+        status.frame = CGRect(x: statusX, y: 10, width: max(0, width - statusX - controlsWidth - restartWidth - 7), height: 15)
+        restartButton.frame = CGRect(x: width - controlsWidth - restartWidth, y: 5, width: restartWidth, height: 26)
+        minimizeButton.frame = CGRect(x: width - 58, y: 4, width: 24, height: 28)
+        maximizeButton.frame = CGRect(x: width - 32, y: 4, width: 24, height: 28)
         scroll.frame = CGRect(x: 0, y: 0, width: width, height: bar.frame.minY)
+        scroll.isHidden = bar.frame.minY <= 0
         webArea.frame = CGRect(x: 0, y: consoleHeight, width: width, height: max(0, height - consoleHeight))
         web.frame = webArea.bounds
         webOverlay.frame = webArea.bounds
@@ -120,20 +214,24 @@ final class WorkspaceView: NSView {
     func presentTerminal() {
         showingTerminal = true
         showingWeb = false
-        launchScreen.isHidden = true
+        terminalSize = .docked
         terminal.isHidden = false
         webArea.isHidden = true
-        stopButton.title = "停止"
-        stopButton.isEnabled = true
+        restartButton.isHidden = true
+        terminalTitle.stringValue = "终端输出  /  astrbot run"
         log.string = ""
         followOutput = true
         dockProgress = 0
     }
 
+    func setShell(_ name: String) {
+        terminalTitle.stringValue = "\(name)  /  astrbot run"
+    }
+
     func presentWeb() {
         showingWeb = true
         webArea.isHidden = false
-        needsLayout = true
+        updateTerminalLayout()
     }
 
     func showWebMessage(_ message: String?, retry: Bool = false) {
@@ -163,5 +261,10 @@ final class WorkspaceView: NSView {
     var testLog: String { log.string }
     var testTerminalFrame: NSRect { terminal.frame }
     var testWebFrame: NSRect { webArea.frame }
+    var testTerminalBar: NSRect { bar.frame }
+    var testTerminalLogHidden: Bool { scroll.isHidden }
+    func testResizeTerminal(by delta: CGFloat) { resizeHandle.onDrag?(delta) }
+    func testToggleMaximize() { maximizeButton.performClick(nil) }
+    func testMinimize() { minimizeButton.performClick(nil) }
     #endif
 }

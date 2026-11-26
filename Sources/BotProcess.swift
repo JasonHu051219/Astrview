@@ -96,22 +96,47 @@ struct BotOutput {
     }
 }
 
-final class BotProcess {
-    private let process = Process()
-    private let pipe = Pipe()
+enum BotShell {
+    // Try Bash only if zsh cannot be launched, never if AstrBot itself exits with an error.
+    static let system = ["/bin/zsh", "/bin/bash"].map { URL(fileURLWithPath: $0) }
+}
 
-    func start(_ configuration: BotConfiguration, output: @escaping (String, String?) -> Void,
-               exited: @escaping (Int32) -> Void) throws {
-        process.executableURL = configuration.executable
-        process.arguments = ["run"]
-        process.currentDirectoryURL = configuration.directory
-        process.environment = configuration.environment
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = pipe
-        process.standardError = pipe
-        try process.run()
-        try? pipe.fileHandleForWriting.close()
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
+final class BotProcess {
+    private var process: Process?
+    private(set) var shell: URL?
+
+    func start(_ configuration: BotConfiguration, shells: [URL] = BotShell.system,
+               output: @escaping (String, String?) -> Void, exited: @escaping (Int32) -> Void) throws {
+        var lastError: Error?
+        for candidate in shells where FileManager.default.isExecutableFile(atPath: candidate.path) {
+            let child = Process()
+            let pipe = Pipe()
+            child.executableURL = candidate
+            // Positional arguments keep paths literal; exec makes AstrBot the managed process.
+            child.arguments = ["-c", "exec \"$1\" run", "astrview", configuration.executable.path]
+            child.currentDirectoryURL = configuration.directory
+            child.environment = configuration.environment
+            child.standardInput = FileHandle.nullDevice
+            child.standardOutput = pipe
+            child.standardError = pipe
+            do {
+                try child.run()
+                process = child
+                shell = candidate
+                try? pipe.fileHandleForWriting.close()
+                Self.collect(from: pipe, process: child, output: output, exited: exited)
+                return
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError ?? NSError(domain: "Astrview", code: 2, userInfo: [NSLocalizedDescriptionKey:
+            "找不到可运行的系统 Shell（/bin/zsh 或 /bin/bash）。"])
+    }
+
+    private static func collect(from pipe: Pipe, process: Process, output: @escaping (String, String?) -> Void,
+                                exited: @escaping (Int32) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
             var parser = BotOutput()
             let reader = pipe.fileHandleForReading
             while true {
@@ -130,12 +155,12 @@ final class BotProcess {
     }
 
     func stop() {
-        guard process.isRunning else { return }
+        guard let process, process.isRunning else { return }
         process.interrupt()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             if process.isRunning { process.terminate() }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
         }
     }
