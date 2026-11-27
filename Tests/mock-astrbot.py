@@ -15,10 +15,12 @@ time.sleep(0.8)
 
 class Dashboard(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        page = b"<!doctype html><title>Dashboard</title><h1>Mock AstrBot Dashboard</h1>"
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(page)))
         self.end_headers()
-        self.wfile.write(b"<!doctype html><title>Dashboard</title><h1>Mock AstrBot Dashboard</h1>")
+        self.wfile.write(page)
 
 
 try:

@@ -10,23 +10,11 @@ xcrun --sdk macosx swiftc -O -swift-version 5 -target "$(uname -m)-apple-macosx1
 cp "$root/Info.plist" "$app/Contents/Info.plist"
 cp "$root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
 
-# Render the vector master once, then create all Finder/Dock icon representations.
-icon_work="$(mktemp -d "$root/build/.astrview-icon.XXXXXXXX")"
-# Verify the resolved path before removing the temporary icon workspace.
-icon_work="$(cd -- "$icon_work" && pwd -P)"
-case "$icon_work" in
-    "$root/build/".astrview-icon.????????) ;;
-    *) printf 'Unexpected temporary icon path: %s\n' "$icon_work" >&2; exit 1 ;;
-esac
-trap 'rm -rf -- "$icon_work"' EXIT
-iconset="$icon_work/Astrview.iconset"
-master="$icon_work/Astrview.png"
-mkdir -p "$iconset"
-/usr/bin/sips -s format png "$root/Assets/Astrview.svg" --out "$master" >/dev/null
-for size in 16 32 128 256 512; do
-    /usr/bin/sips -z "$size" "$size" "$master" --out "$iconset/icon_${size}x${size}.png" >/dev/null
-    /usr/bin/sips -z "$((size * 2))" "$((size * 2))" "$master" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
-done
-/usr/bin/iconutil -c icns "$iconset" -o "$app/Contents/Resources/Astrview.icns"
+# Ship the optimized multi-resolution icon without requiring a PNG optimizer at build time.
+cp "$root/Assets/Astrview.icns" "$app/Contents/Resources/Astrview.icns"
+/usr/bin/sips -s format png -z 80 96 "$root/Assets/AstrviewMenuBar.svg" \
+    --out "$app/Contents/Resources/AstrviewMenuBar.png" >/dev/null
 /usr/bin/codesign --force --sign - "$app"
+# Mark the bundle itself as updated, not just the files inside it.
+/usr/bin/touch "$app"
 printf 'Built %s\n' "$app"

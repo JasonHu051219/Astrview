@@ -32,25 +32,36 @@ struct Smoke {
 
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
-        let delegate = AstrviewApp()
+        let suite = "AstrviewSmoke.\(UUID().uuidString)"
+        let preferences = UserDefaults(suiteName: suite)!
+        defer { preferences.removePersistentDomain(forName: suite) }
+        let delegate = AstrviewApp(preferences: preferences)
         delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
         require(!delegate.testWindow.isVisible && delegate.testLauncher.isVisible, "only floating launcher visible")
         require(!delegate.testLauncher.styleMask.contains(.titled) && delegate.testLauncher.level == .floating, "borderless floating launcher")
         require(delegate.testLauncher.launchButton.attributedTitle.string == "运行astrbot", "launch button title")
         let launcher = delegate.testLauncher
-        let collapsed = launcher.frame
         require(launcher.launchButton.focusRingType == .none, "no focus ring on the launch text")
-        require(launcher.visibleLaunchButton.isHidden, "secondary action starts hidden")
-        launcher.optionsButton.performClick(nil)
-        require(until({ launcher.frame.height > collapsed.height && launcher.visibleLaunchButton.frame.minY >= 0 }), "dropdown grows downward")
-        require(launcher.frame.maxY == collapsed.maxY && launcher.frame.width == collapsed.width, "same top edge and width")
-        require(launcher.visibleLaunchButton.attributedTitle.string == "启动astrbot（不隐藏）" && !launcher.visibleLaunchButton.isHidden, "inline dropdown action")
-        launcher.optionsButton.performClick(nil)
-        require(until({ launcher.frame == collapsed && launcher.visibleLaunchButton.isHidden }), "second click collapses dropdown")
+        require(launcher.contentView is NSVisualEffectView && launcher.contentView?.layer?.borderWidth == 0,
+                "translucent launcher background without a painted border")
+        require(launcher.hidesAfterLaunch && launcher.hideCheckbox.title == "启动后隐藏", "auto-hide defaults on")
+        launcher.settingsButton.performClick(nil)
+        require(delegate.testSettingsPanel?.isVisible == true, "gear opens settings")
+        require(delegate.testStatusItem?.button?.image?.isTemplate == true, "menu bar uses a template icon")
+        require(delegate.testDockCheckbox?.state == .on, "Dock icon defaults on")
+        delegate.testDockCheckbox?.performClick(nil)
+        require(!preferences.bool(forKey: "showDockIcon") && app.activationPolicy() == .accessory, "turning Dock icon off applies and persists")
+        require(delegate.testStatusItem?.isVisible == true, "menu bar item remains visible without Dock")
+        delegate.testDockCheckbox?.performClick(nil)
+        require(preferences.bool(forKey: "showDockIcon") && app.activationPolicy() == .regular, "Dock icon can be restored")
+        delegate.testSettingsPanel?.close()
+        launcher.hideCheckbox.performClick(nil)
+        require(!launcher.hidesAfterLaunch && !preferences.bool(forKey: "hideAfterLaunch") && delegate.testSettingsHideCheckbox?.state == .off,
+                "auto-hide checkbox stays synchronized and persists")
         let project = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         require(BotConfiguration.isProject(project), "recognize AstrBot project marker")
         let port = Int.random(in: 49_152...65_535)
-        try! delegate.testLaunch(in: project, port: port, background: false)
+        try! delegate.testLaunch(in: project, port: port)
         require(delegate.testWindow.isVisible && !delegate.testLauncher.isVisible, "visible mode opens management window")
         require(until({ delegate.testView.testLog.contains("mock: stderr") && delegate.testWindow.frame.width >= min(815, delegate.testExpectedFrame.width - 1) }), "terminal expands and merges output")
         require(delegate.testWindow.title.contains("启动终端") && delegate.testView.testWebFrame.height == 0, "terminal-only stage")
@@ -75,7 +86,11 @@ struct Smoke {
         require(workspace.testTerminalFrame.height == draggedHeight && !workspace.testTerminalLogHidden,
                 "restore custom height after minimizing")
         require(workspace.testLog.contains("mock: stdout"), "retain stdout after resizing")
-        require(until({ !delegate.testView.web.isLoading && delegate.testView.web.url?.host == "localhost" && delegate.testView.web.url?.port == port && delegate.testView.webMessage.stringValue.isEmpty }), "WKWebView opened localhost dashboard")
+        let visibleLoaded = until({ !workspace.web.isLoading && workspace.web.url?.host == "localhost" && workspace.web.url?.port == port && workspace.webMessage.stringValue.isEmpty }, seconds: 10)
+        if !visibleLoaded {
+            print("Visible dashboard: \(workspace.web.url?.absoluteString ?? "nil"), \(workspace.webMessage.stringValue)\n\(workspace.testLog)")
+        }
+        require(visibleLoaded, "WKWebView opened localhost dashboard")
         var text: String?
         delegate.testView.web.evaluateJavaScript("document.body.textContent") { value, _ in text = value as? String }
         require(until({ text?.contains("Mock AstrBot Dashboard") == true }), "render mock dashboard")
@@ -89,18 +104,25 @@ struct Smoke {
         require(delegate.testView.testLog.contains("mock: stopped"), "quit signal reaches AstrBot through exec")
         delegate.testWindow.orderOut(nil)
 
-        let hidden = AstrviewApp()
+        preferences.set(true, forKey: "hideAfterLaunch")
+        preferences.set(false, forKey: "showDockIcon")
+        let hidden = AstrviewApp(preferences: preferences)
+        hidden.applyDockPreference()
         hidden.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
         let fallback = [URL(fileURLWithPath: "/nonexistent-astrview-test-zsh"), BotShell.system[1]]
         let hiddenPort = (port == 65_535) ? port - 1 : port + 1
-        try! hidden.testLaunch(in: project, port: hiddenPort, background: true, shells: fallback)
-        require(hidden.testLauncher.isVisible && !hidden.testLauncher.launchButton.isEnabled && !hidden.testWindow.isVisible,
-                "background mode only shows pending launcher")
+        try! hidden.testLaunch(in: project, port: hiddenPort, shells: fallback)
+        require(!hidden.testLauncher.isVisible && hidden.testWindow.isVisible,
+                "auto-hide mode shows the startup console")
+        require(until({ hidden.testView.testLog.contains("mock: stderr") }) && hidden.testWindow.isVisible
+                && hidden.testView.testWebFrame.height == 0, "logs are visible before auto-hiding")
         require(until({ hidden.testReady }), "background AstrBot becomes ready")
         require(!hidden.testLauncher.isVisible && !hidden.testWindow.isVisible, "background mode hides all windows when ready")
         require(hidden.testView.testLog.contains("[bash]"), "fallback to native Bash if zsh is unavailable")
-        require(hidden.applicationShouldHandleReopen(app, hasVisibleWindows: false) && hidden.testWindow.isVisible,
-                "reopen management window after auto-hide")
+        require(hidden.testStatusTitle == "AstrBot 正在运行", "menu bar reports running status")
+        let showAction = hidden.testStatusItem?.menu?.item(withTitle: "打开 Astrview")
+        require(showAction != nil && app.sendAction(showAction!.action!, to: showAction!.target, from: showAction)
+                && hidden.testWindow.isVisible, "menu bar reopens management window without Dock icon")
         let loaded = until({ !hidden.testView.web.isLoading && hidden.testView.web.url?.port == hiddenPort && hidden.testView.webMessage.stringValue.isEmpty }, seconds: 8)
         if !loaded {
             print("Background dashboard: \(hidden.testView.web.url?.absoluteString ?? "nil"), \(hidden.testView.webMessage.stringValue)\n\(hidden.testView.testLog)")

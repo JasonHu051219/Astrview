@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 20" width="24" height="20">
+  <title>Astrview menu bar template</title>
+  <g fill="none" stroke="#000" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 8V5.5a1 1 0 0 0-1-1H5.5M3.5 11H2v4h1.5m13-4H18v4h-1.5"/>
+    <rect x="3.5" y="8" width="13" height="10" rx="2.6"/>
+    <path d="M7.5 12v2m5-2v2"/>
+  </g>
+  <path d="M19.5 1.6c.48 2.4 1.58 3.5 4 4-.04.35-.33.53-.76.64-1.9.48-2.72 1.46-3.1 3.06-.11.47-.52.47-.64 0-.42-1.67-1.45-2.66-3.08-3.06-.47-.11-.77-.29-.82-.64 2.35-.5 3.46-1.6 3.94-4 .07-.34.4-.34.46 0Z" fill="#000"/>
+</svg>
